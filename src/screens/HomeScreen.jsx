@@ -2,32 +2,34 @@ import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { genCode } from "../lib/utils";
 import { BG, WRAP, mc } from "../styles/tokens";
-import { Avatar, Card, PrimaryBtn, Label, ErrBox, Spinner, SectionTitle } from "../components/UI";
+import { Avatar, Card, Label, ErrBox, Spinner, SectionTitle } from "../components/UI";
 
 export default function HomeScreen({ user, onOpenTrip, onLogout }) {
-  const [trips, setTrips] = useState([]);
+  const [trips, setTrips]             = useState([]);
   const [tripsLoading, setTripsLoading] = useState(true);
 
   // Create trip form
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [showCreate, setShowCreate]   = useState(false);
+  const [newName, setNewName]         = useState("");
   const [newCurrency, setNewCurrency] = useState("€");
 
   // Join trip form
-  const [showJoin, setShowJoin] = useState(false);
-  const [joinCode, setJoinCode] = useState("");
+  const [showJoin, setShowJoin]       = useState(false);
+  const [joinCode, setJoinCode]       = useState("");
 
-  const [error, setError] = useState("");
+  // Delete confirm
+  const [confirmDel, setConfirmDel]   = useState(null); // trip id
+
+  const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { fetchTrips(); }, []);
 
   async function fetchTrips() {
     setTripsLoading(true);
-    // Get all trip IDs this user is a member of
     const { data: memberRows } = await supabase
       .from("trip_members")
-      .select("trip_id, display_name")
+      .select("trip_id")
       .eq("user_id", user.id);
 
     if (!memberRows?.length) { setTrips([]); setTripsLoading(false); return; }
@@ -57,7 +59,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
 
       const { data: trip, error: tripErr } = await supabase
         .from("trips")
-        .insert({ name: newName.trim(), currency: newCurrency, code, expenses: [] })
+        .insert({ name: newName.trim(), currency: newCurrency, code, expenses: [], created_by: user.id })
         .select()
         .single();
       if (tripErr) throw tripErr;
@@ -87,7 +89,6 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
         .single();
       if (findErr || !trip) { setError("Trip not found. Check the code."); setLoading(false); return; }
 
-      // Add member if not already in
       const alreadyIn = trip.trip_members.some(m => m.user_id === user.id);
       if (!alreadyIn) {
         await supabase.from("trip_members").insert({
@@ -103,6 +104,18 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
     setLoading(false);
   }
 
+  async function handleDeleteTrip(tripId) {
+    setLoading(true);
+    try {
+      // Delete members first (foreign key), then the trip
+      await supabase.from("trip_members").delete().eq("trip_id", tripId);
+      await supabase.from("trips").delete().eq("id", tripId);
+      setTrips(prev => prev.filter(t => t.id !== tripId));
+      setConfirmDel(null);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
   return (
     <div style={BG}>
       {/* Header */}
@@ -110,7 +123,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 16 }}>✈️</span>
-            <span style={{ fontSize: 15, fontFamily: "'Syne',sans-serif", fontWeight: 800, letterSpacing: 0.5 }}>tripmate</span>
+            <span style={{ fontSize: 15, fontFamily: "'Outfit',sans-serif", fontWeight: 800, letterSpacing: 0.5 }}>tripmate</span>
           </div>
           <button
             onClick={onLogout}
@@ -128,7 +141,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
           <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem" }}>
             <button
               onClick={() => { setShowCreate(true); setShowJoin(false); setError(""); }}
-              style={{ flex: 1, padding: "13px", borderRadius: 12, background: showCreate ? "#4ECDC430" : "#4ECDC418", border: "1px solid #4ECDC455", color: "#4ECDC4", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "background 0.2s" }}
+              style={{ flex: 1, padding: "13px", borderRadius: 12, background: showCreate ? "#4ECDC430" : "#4ECDC418", border: "1px solid #4ECDC455", color: "#4ECDC4", fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "background 0.2s" }}
             >
               + New trip
             </button>
@@ -143,7 +156,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
           {/* Create form */}
           {showCreate && (
             <Card style={{ marginBottom: "1.5rem", animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: 13, fontFamily: "'Syne',sans-serif", fontWeight: 700, color: "#4ECDC4", marginBottom: 12 }}>New trip</div>
+              <div style={{ fontSize: 13, fontFamily: "'Outfit',sans-serif", fontWeight: 700, color: "#4ECDC4", marginBottom: 12 }}>New trip</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div>
                   <Label>Trip name</Label>
@@ -162,7 +175,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
                 <ErrBox msg={error} />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => { setShowCreate(false); setError(""); }} style={{ flex: 1, padding: "10px", borderRadius: 10, background: "transparent", border: "1px solid #2E3D5F", color: "#5A7AA8", cursor: "pointer", fontFamily: "'DM Sans',sans-serif", fontSize: 13 }}>Cancel</button>
-                  <button onClick={handleCreate} disabled={loading} style={{ flex: 2, padding: "10px", borderRadius: 10, background: "#4ECDC4", border: "none", color: "#161C2D", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 13, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+                  <button onClick={handleCreate} disabled={loading} style={{ flex: 2, padding: "10px", borderRadius: 10, background: "#4ECDC4", border: "none", color: "#161C2D", fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 13, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
                     {loading && <Spinner color="#161C2D" size={13} />} Create trip
                   </button>
                 </div>
@@ -173,7 +186,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
           {/* Join form */}
           {showJoin && (
             <Card style={{ marginBottom: "1.5rem", animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: 13, fontFamily: "'Syne',sans-serif", fontWeight: 700, color: "#4D96FF", marginBottom: 12 }}>Join a trip</div>
+              <div style={{ fontSize: 13, fontFamily: "'Outfit',sans-serif", fontWeight: 700, color: "#4D96FF", marginBottom: 12 }}>Join a trip</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div>
                   <Label>Trip code</Label>
@@ -181,7 +194,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
                     placeholder="AB3X9"
                     value={joinCode}
                     onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                    style={{ textTransform: "uppercase", letterSpacing: 6, fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, textAlign: "center" }}
+                    style={{ textTransform: "uppercase", letterSpacing: 6, fontFamily: "'Outfit',sans-serif", fontWeight: 800, fontSize: 22, textAlign: "center" }}
                     autoFocus
                     onKeyDown={e => e.key === "Enter" && handleJoin()}
                   />
@@ -189,7 +202,7 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
                 <ErrBox msg={error} />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => { setShowJoin(false); setError(""); }} style={{ flex: 1, padding: "10px", borderRadius: 10, background: "transparent", border: "1px solid #2E3D5F", color: "#5A7AA8", cursor: "pointer", fontFamily: "'DM Sans',sans-serif", fontSize: 13 }}>Cancel</button>
-                  <button onClick={handleJoin} disabled={loading} style={{ flex: 2, padding: "10px", borderRadius: 10, background: "#4D96FF", border: "none", color: "#161C2D", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 13, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+                  <button onClick={handleJoin} disabled={loading} style={{ flex: 2, padding: "10px", borderRadius: 10, background: "#4D96FF", border: "none", color: "#161C2D", fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 13, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
                     {loading && <Spinner color="#161C2D" size={13} />} Join trip
                   </button>
                 </div>
@@ -202,20 +215,38 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
           {tripsLoading ? (
             <div style={{ display: "flex", justifyContent: "center", padding: "3rem 0" }}><Spinner /></div>
           ) : trips.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3.5rem 0", color: "#3A4E72" }}>
+            <div style={{ textAlign: "center", padding: "3.5rem 0" }}>
               <div style={{ fontSize: 38, marginBottom: 12 }}>🏝️</div>
-              <div style={{ fontSize: 15, fontFamily: "'Syne',sans-serif", fontWeight: 600, color: "#5A7AA8" }}>No trips yet</div>
-              <div style={{ fontSize: 12, marginTop: 6, color: "#3A4E72" }}>Create one or join with a code above.</div>
+              <div style={{ fontSize: 15, fontFamily: "'Outfit',sans-serif", fontWeight: 600, color: "#5A7AA8" }}>No trips yet</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "#3D5580" }}>Create one or join with a code above.</div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {trips.map((t, i) => {
-                const total = (t.expenses || []).reduce((s, e) => s + e.amount, 0);
+                const total     = (t.expenses || []).reduce((s, e) => s + e.amount, 0);
+                const isCreator = t.created_by === user.id;
+                const isDeleting = confirmDel === t.id;
+
                 return (
-                  <Card key={t.id} hover onClick={() => onOpenTrip(t)} style={{ animation: `slideIn 0.2s ease ${i * 0.04}s both` }}>
+                  <Card key={t.id} style={{ animation: `slideIn 0.2s ease ${i * 0.04}s both` }}>
+
+                    {/* Delete confirm banner */}
+                    {isDeleting && (
+                      <div style={{ background: "#FF6B6B12", border: "1px solid #FF6B6B30", borderRadius: 10, padding: "10px 12px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ fontSize: 12, color: "#FF6B6B" }}>Delete "{t.name}" for everyone?</span>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => setConfirmDel(null)} style={{ padding: "5px 10px", borderRadius: 8, background: "transparent", border: "1px solid #2E3D5F", color: "#5A7AA8", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Cancel</button>
+                          <button onClick={() => handleDeleteTrip(t.id)} disabled={loading} style={{ padding: "5px 10px", borderRadius: 8, background: "#FF6B6B", border: "none", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                            {loading && <Spinner color="#fff" size={11} />} Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: 15, fontFamily: "'Syne',sans-serif", fontWeight: 700, marginBottom: 8 }}>{t.name}</div>
+                      {/* Left — click to open */}
+                      <div style={{ flex: 1, cursor: "pointer" }} onClick={() => onOpenTrip(t)}>
+                        <div style={{ fontSize: 15, fontFamily: "'Outfit',sans-serif", fontWeight: 700, marginBottom: 8 }}>{t.name}</div>
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                           {(t.trip_members || []).slice(0, 5).map((m, mi) => (
                             <Avatar key={m.user_id} name={m.display_name} idx={mi} size={24} />
@@ -227,11 +258,23 @@ export default function HomeScreen({ user, onOpenTrip, onLogout }) {
                           )}
                         </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 17, fontFamily: "'Syne',sans-serif", fontWeight: 700 }}>{t.currency}{total.toFixed(2)}</div>
-                        <div style={{ fontSize: 10, color: "#5A7AA8", marginTop: 4, background: "#2E3D5F", borderRadius: 6, padding: "2px 8px", letterSpacing: 2, fontFamily: "'Syne',sans-serif", display: "inline-block" }}>
+
+                      {/* Right — total + code + delete */}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                        <div style={{ fontSize: 17, fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{t.currency}{total.toFixed(2)}</div>
+                        <div style={{ fontSize: 10, color: "#5A7AA8", background: "#2E3D5F", borderRadius: 6, padding: "2px 8px", letterSpacing: 2, fontFamily: "'Outfit',sans-serif" }}>
                           {t.code}
                         </div>
+                        {/* Delete button — only for creator */}
+                        {isCreator && (
+                          <button
+                            onClick={() => setConfirmDel(isDeleting ? null : t.id)}
+                            title="Delete trip"
+                            style={{ padding: "4px 8px", borderRadius: 8, background: isDeleting ? "#FF6B6B20" : "transparent", border: `1px solid ${isDeleting ? "#FF6B6B" : "#FF6B6B40"}`, color: "#FF6B6B", fontSize: 11, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "all 0.15s" }}
+                          >
+                            🗑️ delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   </Card>
